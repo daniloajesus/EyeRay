@@ -7,4 +7,3 @@ In order to run this code you must add Chebfun toolbox to your Matlab directory 
 Finally, run the code EyeRay.m for ray tracing and EyeRayShow.m and/or gPSF.m to present the results graphically.
 
 Have fun
-Danilo A. Jesus
