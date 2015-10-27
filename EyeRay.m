@@ -1,4 +1,4 @@
-function [Data]=EyeRay(Xo,Yo,Z,NoM)
+function [Data]=EyeRay(Z,NoM)
 %In this function we propose an extension of Gagnon et al. method (Appl. 
 %Optics, 2014). The presented method is non-symmetrical to optical axis 
 %and all the optical surfaces are represented two-dimensionally by 
@@ -13,8 +13,6 @@ function [Data]=EyeRay(Xo,Yo,Z,NoM)
 %   2.3 Refraction (for all surfaces except the last one)
 %
 %Input:
-% X: (0 by default)
-% Y: (0 by default)
 % Z: (1e7 by default)
 % NoM: Number of Meridians (5 by default)
 %
@@ -28,31 +26,34 @@ function [Data]=EyeRay(Xo,Yo,Z,NoM)
 % point at 1e7 over 5 meridians
 % [Data]=EyeRay(0.02,0.01,1e7,10); %Optical system centered at (0.02,0.01)
 % for a source point at 1e7 over 10 meridians
+% 
+% Note 1: For an off-axis analysis you can, for example, reduce the angle 
+% of aperture to dombeta = [maxbeta-maxbeta/2, maxbeta] and to limit
+% the range of the meridional angle (ia=80, fa=110)
 %
-% Note 1: The focal point changes when you move the optical system. Therefore
+% Note 2: The focal point changes when you move the optical system. Therefore
 % if you want to see the spot diagram at the focal point you should
 % calculate it and ajust retina position. The new focal point can easily be
 % calculated through the circle of confusion.
 %
-% Note 2: The lateral movements of the optical system are restricted by
+% Note 3: The lateral movements of the optical system are restricted by
 % surface's equations, namely by the zero at square root. For example, if you
 % define EyeRay(0.2,0.3,1e7,20) you will get the following error message,
 % "A change of sign/zero has been detected, unable to represent the
 % result." In order to get free of it you should change the radius/asphericity
 % 
+%
 % Graphical representation
 % gPSF(Data,NoR) - Spot Diagram where NoR is the number of rays per meridian
 % EyeRayShow(Data) - Schematic representation
 
-% v1.0
+% v1.01
 % in: AGEYE, 608049.
 
 
 %% Initial parameters
 if nargin==0     
     Z=1e7;  %Source distance
-    Xo=0;   %Optical system's center
-    Yo=0;   
     NoM=5;  %Number of Meridians
 end
 
@@ -60,17 +61,17 @@ end
 chebfunpref.setDefaults('factory');
 chebfunpref.setDefaults('splitting', true)
 
+
 dom=[-1 1 -1 1]; %Surface's domain
 app=1.7; %Aperture diameter
 r=app/2; %Radius of the optical aperture
 maxbeta = atan(r/Z); %Angle between optical axis and periphery rays
-dombeta = [-maxbeta, maxbeta]; %Domain of beta
+dombeta = [-maxbeta, maxbeta]; % Angle of Aperture (Domain of beta) 
 beta=chebfun(@(beta) beta,dombeta); %All possible angles defined as chebfun
 p=0*beta + 1i*Z; %Light's initial position
 I=exp(1i*(beta-pi/2)); %Light's initial direction
 x=chebfun2(@(x,y) x,dom);  %Function necessary for the plane
-ri=[1,1.3777,1.3371,1.3976,1.4033,1.3976,1.3377]; %Refractive indices
-NoS=length(ri); %Number of surfaces
+NoS=7; %Number of surfaces
 
 iI=I; %Ray's initial direction
 iP=p; %Source's inital position
@@ -82,17 +83,19 @@ for u=1:NoS
     Data{u}=chebfun(@(x) x,dombeta);
 end
 
-k=0; %Meridian 
-stp=180/NoM; %Interval between each meridian
-for th =0:stp:180-stp
+k=0; %Meridian
+
+%Range of the Meridional angle
+ia=0; %Inital angle
+fa=180; %final angle
+stp=(fa-ia)/NoM; %Interval between meridians
+
+for th =ia:stp:fa-stp
 k=k+1; %Meridian 
 
 %Rotational matrix - there's a rotation of the 2D surface for each meridian
 XX=chebfun2(@(x,y) x*cos(th*pi/180)+y*sin(th*pi/180),dom);
 YY=chebfun2(@(x,y) -x*sin(th*pi/180)+y*cos(th*pi/180),dom);
-
-XX=XX-Xo; %Optical system translation
-YY=YY-Yo;
 
 %%  Model structurally similar to the human eye
 
@@ -161,7 +164,12 @@ retina=retina-retina(0,0) + D_r;
 %Optical system
 opt_sys={a_cornea,p_cornea,ac_lens,an_lens,pn_lens,pc_lens,retina};
 
-
+%Refractive indices
+ri=chebfun({@(x) 1, @(x) 1.3777, @(x) 1.3371,@(x) 1.3976,...
+    @(x) 1.4033,@(x) 1.3976,@(x) 1.3377},-1*[1 a_cornea(0,0)...
+     p_cornea(0,0) ac_lens(0,0) an_lens(0,0) pn_lens(0,0)...
+      pc_lens(0,0) retina(0,0)],'splitting','on'); 
+  
     for t = 1:NoS    
         
         Lens=opt_sys{t};
@@ -171,8 +179,8 @@ opt_sys={a_cornea,p_cornea,ac_lens,an_lens,pn_lens,pc_lens,retina};
         
         %Refraction 
         if t < NoS %Don't refract through the last surface  
-            n1=ri(t); %Refractive index 1
-            n2=ri(t+1); %Refractive index 2
+            n1=(ri(-1*(Lens(0,0)+.0001))); %Refractive index 1 (before the Lens)
+            n2=(ri(-1*(Lens(0,0)-.0001))); %Refractive index 2 (after the Lens)
             dz=diff(Lens,1,2); %Derivative on x
             N=atan(dz)+pi/2; %Normal of the surface
             Ni = N(Data{t}(:,k)); %Angle of the normal and x axis
@@ -189,7 +197,7 @@ end
 
 %Add sufaces to the Output cell
 Data{u+1}=opt_sys;
-Data{u+2}=[Xo,Yo];
+Data{u+2}=[ia,stp];
 
 %Intersection function
 function [p]=intersection(Lens, pb, Ib, x)
@@ -198,6 +206,5 @@ function [p]=intersection(Lens, pb, Ib, x)
     x2 = roots(Lens-f);  % the x value where the interface and ray intersect  
     p=x2(0);
 end
-
 
 end
